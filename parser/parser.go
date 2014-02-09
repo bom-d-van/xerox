@@ -132,6 +132,52 @@ func init() {
 				{{.Fields}}
 			}
 		{{end}}
+
+		{{define "map"}}
+			for key, value := range {{.OPrefix}}.{{.Name}} {
+				{{.CPrefix}}.{{.Name}}[key] = value
+			}
+		{{end}}
+
+		{{define "structMap"}}
+			for key, value := range {{.OPrefix}}.{{.Name}} {
+				newValue := {{.Type}}{}
+				{{.Body}}
+				{{.CPrefix}}.{{.Name}}[key] = newValue
+			}
+		{{end}}
+
+		{{define "structPtrMap"}}
+			for key, value := range {{.OPrefix}}.{{.Name}} {
+				var newValue *{{.Type}}
+				if value != nil {
+					{{.Body}}
+				}
+				{{.CPrefix}}.{{.Name}}[key] = newValue
+			}
+		{{end}}
+
+		{{define "array"}}
+			for _, elt := range {{.OPrefix}}.{{.Name}} {
+				{{if .IsEltPrimitive}}
+					{{.CPrefix}}.{{.Name}} = append({{.CPrefix}}.{{.Name}}, elt)
+				{{end}}
+				{{if .IsEltPrimitivePtr}}
+				{{end}}
+				{{if .IsEltStruct}}
+					newElt := {{.Type}}{}
+					{{.Body}}
+					{{.CPrefix}}.{{.Name}} = newElt
+				{{end}}
+				{{if .IsEltStructPtr}}
+					newElt := &{{.Type}}{}
+					if elt != nil {
+						{{.Body}}
+					}
+					{{.CPrefix}}.{{.Name}} = newElt
+				{{end}}
+			}
+		{{end}}
 	`))
 }
 
@@ -152,6 +198,21 @@ type (
 		Name             string
 		Type             string
 		Fields           string
+	}
+
+	commonTmplData struct {
+		OPrefix, CPrefix string
+		Name             string
+		Type             string
+		Body             string
+	}
+
+	arrayTmplData struct {
+		commonTmplData
+		IsEltPrimitive    bool
+		IsEltPrimitivePtr bool
+		IsEltStruct       bool
+		IsEltStructPtr    bool
 	}
 )
 
@@ -181,7 +242,7 @@ func GenCodes(path string) (codes string, err error) {
 			for _, specx := range decl.Specs {
 				spec, ok := specx.(*ast.TypeSpec)
 				if !ok {
-					return
+					continue
 				}
 				var specCodes string
 				specCodes, err = genStructCodes(spec, "sample", "copied")
@@ -206,6 +267,7 @@ func GenCodes(path string) (codes string, err error) {
 		}
 	}
 
+	codes = "package main\n" + codes
 	formatedCodes, err := format.Source([]byte(codes))
 	if err != nil {
 		err = errutil.Wrap(err)
@@ -242,7 +304,6 @@ func genFieldCodes(field *ast.Field, oprefix, cprefix string) (codes string, err
 		case *ast.Ident:
 			if ftype.Obj != nil && ftype.Obj.Decl != nil {
 				if decl, ok := ftype.Obj.Decl.(*ast.TypeSpec); ok {
-					// log.Printf("--> %+v\n", decl)
 					var typeCodes string
 					typeCodes, err = genStructCodes(decl, oprefix+"."+name.Name, cprefix+"."+name.Name)
 					if err != nil {
@@ -268,12 +329,127 @@ func genFieldCodes(field *ast.Field, oprefix, cprefix string) (codes string, err
 				}
 				codes += starCodes
 			} else {
-				genFieldCodes(ftype.X, oprefix, cprefix)
+				switch xType := ftype.X.(type) {
+				case *ast.Ident:
+					if xType.Obj != nil && xType.Obj.Decl != nil {
+						if decl, ok := xType.Obj.Decl.(*ast.TypeSpec); ok {
+							var bodyCodes string
+							bodyCodes, err = genStructCodes(decl, oprefix+"."+name.Name, cprefix+"."+name.Name)
+							if err != nil {
+								err = errutil.Wrap(err)
+								return
+							}
+							var ptrCodes string
+							ptrCodes, err = runTmpl("structStarExpr", structStarExprTmplData{
+								OPrefix: oprefix,
+								CPrefix: cprefix,
+								Name:    name.Name,
+								Type:    xType.Name,
+								Fields:  bodyCodes,
+							})
+							if err != nil {
+								err = errutil.Wrap(err)
+								return
+							}
+							codes += ptrCodes
+						}
+					}
+				}
 			}
 		case *ast.MapType:
-			log.Printf("--> MapType %+v\n", ftype)
+			// _, ok := ftype.Key.(*ast.Ident)
+			// if !ok {
+			// 	continue
+			// }
+			if isPrimitiveType(ftype.Value) {
+				val, ok := ftype.Value.(*ast.Ident)
+				_ = val
+				if !ok {
+					continue
+				}
+
+				var mapCodes string
+				mapCodes, err = runTmpl("map", commonTmplData{
+					CPrefix: cprefix,
+					OPrefix: oprefix,
+					Name:    name.Name,
+				})
+				if err != nil {
+					err = errutil.Wrap(err)
+					return
+				}
+				codes += mapCodes
+			} else {
+				switch valType := ftype.Value.(type) {
+				case *ast.Ident:
+					var valCodes string
+					decl := valType.Obj.Decl.(*ast.TypeSpec)
+					valCodes, err = genStructCodes(decl, "value", "newValue")
+					if err != nil {
+						err = errutil.Wrap(err)
+						return
+					}
+					var mapCodes string
+					mapCodes, err = runTmpl("structMap", commonTmplData{
+						CPrefix: cprefix,
+						OPrefix: oprefix,
+						Name:    name.Name,
+						Type:    valType.Name,
+						Body:    valCodes,
+					})
+					if err != nil {
+						err = errutil.Wrap(err)
+						return
+					}
+					codes += mapCodes
+				case *ast.StarExpr:
+					var valCodes string
+					xType := valType.X.(*ast.Ident)
+					decl := xType.Obj.Decl.(*ast.TypeSpec)
+					valCodes, err = genStructCodes(decl, "value", "newValue")
+					if err != nil {
+						err = errutil.Wrap(err)
+						return
+					}
+					var mapCodes string
+					mapCodes, err = runTmpl("structPtrMap", commonTmplData{
+						CPrefix: cprefix,
+						OPrefix: oprefix,
+						Name:    name.Name,
+						Type:    xType.Name,
+						Body:    valCodes,
+					})
+					if err != nil {
+						err = errutil.Wrap(err)
+						return
+					}
+					codes += mapCodes
+				}
+			}
 		case *ast.ArrayType:
-			// ftype.Elt
+			switch eltType := ftype.Elt.(type) {
+			case *ast.Ident:
+				if eltType.Obj == nil {
+					var eltCodes string
+					eltCodes, err = runTmpl("array", arrayTmplData{
+						commonTmplData: commonTmplData{
+							CPrefix: cprefix,
+							OPrefix: oprefix,
+							Name:    name.Name,
+						},
+						IsEltPrimitive: true,
+					})
+					if err != nil {
+						err = errutil.Wrap(err)
+						return
+					}
+
+					codes += eltCodes
+				} else {
+
+				}
+			case *ast.StarExpr:
+			}
 		case *ast.ChanType:
 			log.Printf("--> ChanType %+v\n", ftype)
 		case *ast.FuncType:
@@ -286,12 +462,20 @@ func genFieldCodes(field *ast.Field, oprefix, cprefix string) (codes string, err
 	return
 }
 
-func isPrimitiveType(expr ast.Expr) bool {
-	if ident, ok := expr.(*ast.Ident); ok {
-		return ident.Obj == nil
+func isPrimitiveType(exprx ast.Expr) bool {
+	// if ident, ok := exprx.(*ast.Ident); ok {
+	// 	return ident.Obj == nil
+	// }
+	switch expr := exprx.(type) {
+	case *ast.Ident:
+		return expr.Obj == nil
+	case *ast.StarExpr:
+		return false
+	default:
+		return true
 	}
 
-	return false
+	return true
 }
 
 // func walkGenDeclSpecs(specs []ast.Spec) {

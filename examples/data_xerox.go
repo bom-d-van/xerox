@@ -78,7 +78,7 @@ type Type struct {
 
 	Expression string
 
-	Parent *Type
+	// Parent *Type
 	Prefix string
 
 	IsPrimitive bool // i.e. string, int, float, etc
@@ -88,12 +88,12 @@ type Type struct {
 	IsStar     bool
 	TmpVarName string
 
-	IsMap     bool
-	KeyType   *Type
-	ValueType *Type
+	IsMap bool
+	// KeyType   *Type
+	// ValueType *Type
 
 	IsArray bool
-	EleType *Type
+	// EleType *Type
 }
 
 var primitiveCopy = `{{.CopiedPrefix}}.{{.Name}} = {{.SamplePrefix}}.{{.Name}}`

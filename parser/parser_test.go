@@ -1,10 +1,10 @@
 package main
 
 import (
-	"testing"
-	"github.com/bom-d-van/goutil/errutil"
-
 	"log"
+	"testing"
+
+	"github.com/bom-d-van/goutil/errutil"
 	"github.com/bom-d-van/goutil/gocheckutil"
 	. "launchpad.net/gocheck"
 )
@@ -46,4 +46,5 @@ func (p *ParserSuite) TestWalk(c *C) {
 	if err != nil {
 		log.Printf("--> %+v\n", err.(errutil.Err).Details())
 	}
+	// c.Check(err, Equals, nil)
 }
