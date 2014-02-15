@@ -21,6 +21,7 @@ type Data struct {
 	// ValPtrMap  map[int]*string
 
 	infos       []float64
+	infoptrs    []*int
 	subdatas    []SubData
 	subDataPtrs []*SubData
 

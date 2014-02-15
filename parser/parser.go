@@ -163,6 +163,8 @@ func init() {
 					{{.CPrefix}}.{{.Name}} = append({{.CPrefix}}.{{.Name}}, elt)
 				{{end}}
 				{{if .IsEltPrimitivePtr}}
+					newElt := *elt
+					{{.CPrefix}}.{{.Name}} = append({{.CPrefix}}.{{.Name}}, &newElt)
 				{{end}}
 				{{if .IsEltStruct}}
 					newElt := {{.Type}}{}
@@ -357,10 +359,6 @@ func genFieldCodes(field *ast.Field, oprefix, cprefix string) (codes string, err
 				}
 			}
 		case *ast.MapType:
-			// _, ok := ftype.Key.(*ast.Ident)
-			// if !ok {
-			// 	continue
-			// }
 			if isPrimitiveType(ftype.Value) {
 				val, ok := ftype.Value.(*ast.Ident)
 				_ = val
@@ -449,6 +447,26 @@ func genFieldCodes(field *ast.Field, oprefix, cprefix string) (codes string, err
 
 				}
 			case *ast.StarExpr:
+				xtype := eltType.X.(*ast.Ident)
+				if xtype.Obj == nil {
+					var eltCodes string
+					eltCodes, err = runTmpl("array", arrayTmplData{
+						commonTmplData: commonTmplData{
+							CPrefix: cprefix,
+							OPrefix: oprefix,
+							Name:    name.Name,
+						},
+						IsEltPrimitivePtr: true,
+					})
+					if err != nil {
+						err = errutil.Wrap(err)
+						return
+					}
+
+					codes += eltCodes
+				} else {
+
+				}
 			}
 		case *ast.ChanType:
 			log.Printf("--> ChanType %+v\n", ftype)
