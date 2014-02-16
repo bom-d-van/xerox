@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"text/template"
 
 	"github.com/bom-d-van/goutil/errutil"
 )
@@ -29,59 +27,6 @@ type xeroxVisistor struct {
 
 var xeroxMaker = regexp.MustCompile("@xerox( .*)?(\n)?")
 
-func (x *xeroxVisistor) Visit(nodex ast.Node) ast.Visitor {
-	switch node := nodex.(type) {
-	case *ast.CommentGroup:
-		log.Printf("--> CommentGroup %+v\n", node)
-		x.currentSpec = retrieveDescription(node.Text())
-	case *ast.TypeSpec:
-		// log.Printf("--> %+v\n", node.Doc)
-		log.Printf("--> TypeSpec %+v\n", node)
-	// case *ast.Ident:
-	// 	log.Printf("--> Ident %+v\n", node)
-	// 	if node.Obj != nil {
-	// 		log.Printf("--> %+v\n", node.Obj)
-	// 	}
-	case *ast.Field:
-		log.Printf("--> Field %+v %+v\n", node.Names, node.Type)
-		if sfield, ok := node.Type.(*ast.Ident); ok {
-			log.Printf("--> StructField %+v\n", sfield.Obj)
-		}
-	case *ast.StructType:
-		log.Printf("--> StructType %+v\n", node.Fields.List)
-		ast.Walk(x, node.Fields)
-	// log.Printf("--> %+v\n", i.Fields)
-	// fset := tokeny.NewFileSet()
-	// cmap := ast.NewCommentMap(fset, i, []*ast.CommentGroup{x.currentCommentGroup})
-	// for k, v := range cmap {
-	// 	log.Printf("--> %+v\n", k)
-	// 	log.Printf("--> %+v\n", v[0].List[0])
-	// }
-	// for _, field := range node.Fields.List {
-	// 	log.Printf("--> %+v\n", "-----------")
-	// 	// debug.PrintStack()
-	// 	log.Printf("--> %+v\n", field.Type)
-	// 	// log.Printf("--> %s\n", field.Type.(*ast.Ident).Name)
-	// 	// log.Printf("--> %+v\n", reflect.TypeOf(field.Type).Name())
-	// 	for _, name := range field.Names {
-	// 		log.Printf("--> %+v\n", name.Name)
-	// 	}
-	// }
-	case *ast.MapType:
-		log.Printf("--> MapType %+v\n", node)
-	case *ast.ArrayType:
-		log.Printf("--> ArrayType %+v\n", node)
-	case *ast.ChanType:
-		log.Printf("--> ChanType %+v\n", node)
-	case *ast.FuncType:
-		log.Printf("--> FuncType %+v\n", node)
-	case *ast.InterfaceType:
-		log.Printf("--> InterfaceType %+v\n", node)
-	}
-
-	return x
-}
-
 func retrieveDescription(format string) string {
 	matches := xeroxMaker.FindSubmatch([]byte(format))
 	if len(matches) == 0 {
@@ -94,129 +39,6 @@ func retrieveDescription(format string) string {
 func filter(os.FileInfo) bool {
 	return true
 }
-
-var codeTmpl *template.Template
-
-func runTmpl(name string, data interface{}) (codes string, err error) {
-	buffer := bytes.NewBuffer([]byte{})
-	err = codeTmpl.ExecuteTemplate(buffer, name, data)
-	if err != nil {
-		err = errutil.Wrap(err)
-		return
-	}
-	codes = buffer.String()
-
-	return
-}
-
-func init() {
-	codeTmpl = template.Must(template.New("").Parse(`
-		{{define "commonFunc"}}
-			func Xerox{{.Name}}(sample {{.Type}}) {{.Type}} {
-				copied := {{.Type}}{}
-				{{.Body}}
-				return copied
-			}
-		{{end}}
-
-		{{define "starExpr"}}
-			if {{.OPrefix}}.{{.Name}} != nil {
-				val := *{{.OPrefix}}.{{.Name}}
-				{{.CPrefix}}.{{.Name}} = &val
-			}
-		{{end}}
-
-		{{define "structStarExpr"}}
-			if {{.OPrefix}}.{{.Name}} != nil {
-				{{.CPrefix}}.{{.Name}} = &{{.Type}}{}
-				{{.Fields}}
-			}
-		{{end}}
-
-		{{define "map"}}
-			for key, value := range {{.OPrefix}}.{{.Name}} {
-				{{.CPrefix}}.{{.Name}}[key] = value
-			}
-		{{end}}
-
-		{{define "structMap"}}
-			for key, value := range {{.OPrefix}}.{{.Name}} {
-				newValue := {{.Type}}{}
-				{{.Body}}
-				{{.CPrefix}}.{{.Name}}[key] = newValue
-			}
-		{{end}}
-
-		{{define "structPtrMap"}}
-			for key, value := range {{.OPrefix}}.{{.Name}} {
-				var newValue *{{.Type}}
-				if value != nil {
-					{{.Body}}
-				}
-				{{.CPrefix}}.{{.Name}}[key] = newValue
-			}
-		{{end}}
-
-		{{define "array"}}
-			for _, elt := range {{.OPrefix}}.{{.Name}} {
-				{{if .IsEltPrimitive}}
-					{{.CPrefix}}.{{.Name}} = append({{.CPrefix}}.{{.Name}}, elt)
-				{{end}}
-				{{if .IsEltPrimitivePtr}}
-					newElt := *elt
-					{{.CPrefix}}.{{.Name}} = append({{.CPrefix}}.{{.Name}}, &newElt)
-				{{end}}
-				{{if .IsEltStruct}}
-					newElt := {{.Type}}{}
-					{{.Body}}
-					{{.CPrefix}}.{{.Name}} = newElt
-				{{end}}
-				{{if .IsEltStructPtr}}
-					newElt := &{{.Type}}{}
-					if elt != nil {
-						{{.Body}}
-					}
-					{{.CPrefix}}.{{.Name}} = newElt
-				{{end}}
-			}
-		{{end}}
-	`))
-}
-
-type (
-	funcTmplData struct {
-		Name string
-		Type string
-		Body string
-	}
-
-	starExprTmplData struct {
-		OPrefix, CPrefix string
-		Name             string
-	}
-
-	structStarExprTmplData struct {
-		OPrefix, CPrefix string
-		Name             string
-		Type             string
-		Fields           string
-	}
-
-	commonTmplData struct {
-		OPrefix, CPrefix string
-		Name             string
-		Type             string
-		Body             string
-	}
-
-	arrayTmplData struct {
-		commonTmplData
-		IsEltPrimitive    bool
-		IsEltPrimitivePtr bool
-		IsEltStruct       bool
-		IsEltStructPtr    bool
-	}
-)
 
 func GenCodes(path string) (codes string, err error) {
 	visitor := &xeroxVisistor{}
@@ -241,35 +63,35 @@ func GenCodes(path string) (codes string, err error) {
 				continue
 			}
 
+			if !xeroxMaker.MatchString(decl.Doc.Text()) {
+				continue
+			}
+
 			for _, specx := range decl.Specs {
 				spec, ok := specx.(*ast.TypeSpec)
 				if !ok {
 					continue
 				}
 				var specCodes string
-				specCodes, err = genStructCodes(spec, "sample", "copied")
+				specCodes, err = genStructCodes(spec, "sample", "copied", "")
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
 				}
 
-				var funcCodes string
-				funcCodes, err = runTmpl("commonFunc", funcTmplData{
-					Name: spec.Name.Name,
-					Type: spec.Name.Name,
-					Body: specCodes,
-				})
-				if err != nil {
-					err = errutil.Wrap(err)
-					return
-				}
+				tname := spec.Name.Name
+				codes += fmt.Sprintf(`
+					func Xerox%s(sample %s) %s {
+						copied := %s{}
+						%s
 
-				codes += funcCodes + "\n"
+						return copied
+					}`, tname, tname, tname, tname, cleanNewLine(specCodes))
 			}
 		}
 	}
 
-	codes = "package main\n" + codes
+	codes = "package " + pkg.Name + "\n" + codes
 	formatedCodes, err := format.Source([]byte(codes))
 	if err != nil {
 		err = errutil.Wrap(err)
@@ -280,7 +102,7 @@ func GenCodes(path string) (codes string, err error) {
 	return
 }
 
-func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix string) (codes string, err error) {
+func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix, suffix string) (codes string, err error) {
 	structType, ok := spec.Type.(*ast.StructType)
 	if !ok {
 		return
@@ -288,7 +110,7 @@ func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix string) (codes string, 
 
 	for _, field := range structType.Fields.List {
 		var fieldCodes string
-		fieldCodes, err = genFieldCodes(field, oprefix, cprefix)
+		fieldCodes, err = genFieldCodes(field, oprefix, cprefix, suffix)
 		if err != nil {
 			err = errutil.Wrap(err)
 			return
@@ -299,201 +121,227 @@ func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix string) (codes string, 
 	return
 }
 
-func genFieldCodes(field *ast.Field, oprefix, cprefix string) (codes string, err error) {
+func genFieldCodes(field *ast.Field, oprefix, cprefix, suffix string) (codes string, err error) {
 	for _, name := range field.Names {
-		switch ftype := field.Type.(type) {
-		case *ast.StructType:
-		case *ast.Ident:
-			if ftype.Obj != nil && ftype.Obj.Decl != nil {
-				if decl, ok := ftype.Obj.Decl.(*ast.TypeSpec); ok {
-					var typeCodes string
-					typeCodes, err = genStructCodes(decl, oprefix+"."+name.Name, cprefix+"."+name.Name)
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-					codes += typeCodes
-				}
-			} else {
-				codes += fmt.Sprintf("%s.%s = %s.%s\n", cprefix, name, oprefix, name)
-			}
-		case *ast.StarExpr:
-			if isPrimitiveType(ftype.X) {
-				var starCodes string
-				starCodes, err = runTmpl("starExpr", starExprTmplData{
-					CPrefix: cprefix,
-					OPrefix: oprefix,
-					Name:    name.Name,
-				})
-				if err != nil {
-					err = errutil.Wrap(err)
-					return
-				}
-				codes += starCodes
-			} else {
-				switch xType := ftype.X.(type) {
-				case *ast.Ident:
-					if xType.Obj != nil && xType.Obj.Decl != nil {
-						if decl, ok := xType.Obj.Decl.(*ast.TypeSpec); ok {
-							var bodyCodes string
-							bodyCodes, err = genStructCodes(decl, oprefix+"."+name.Name, cprefix+"."+name.Name)
-							if err != nil {
-								err = errutil.Wrap(err)
-								return
-							}
-							var ptrCodes string
-							ptrCodes, err = runTmpl("structStarExpr", structStarExprTmplData{
-								OPrefix: oprefix,
-								CPrefix: cprefix,
-								Name:    name.Name,
-								Type:    xType.Name,
-								Fields:  bodyCodes,
-							})
-							if err != nil {
-								err = errutil.Wrap(err)
-								return
-							}
-							codes += ptrCodes
-						}
-					}
-				}
-			}
-		case *ast.MapType:
-			if isPrimitiveType(ftype.Value) {
-				val, ok := ftype.Value.(*ast.Ident)
-				_ = val
-				if !ok {
-					continue
-				}
-
-				var mapCodes string
-				mapCodes, err = runTmpl("map", commonTmplData{
-					CPrefix: cprefix,
-					OPrefix: oprefix,
-					Name:    name.Name,
-				})
-				if err != nil {
-					err = errutil.Wrap(err)
-					return
-				}
-				codes += mapCodes
-			} else {
-				switch valType := ftype.Value.(type) {
-				case *ast.Ident:
-					var valCodes string
-					decl := valType.Obj.Decl.(*ast.TypeSpec)
-					valCodes, err = genStructCodes(decl, "value", "newValue")
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-					var mapCodes string
-					mapCodes, err = runTmpl("structMap", commonTmplData{
-						CPrefix: cprefix,
-						OPrefix: oprefix,
-						Name:    name.Name,
-						Type:    valType.Name,
-						Body:    valCodes,
-					})
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-					codes += mapCodes
-				case *ast.StarExpr:
-					var valCodes string
-					xType := valType.X.(*ast.Ident)
-					decl := xType.Obj.Decl.(*ast.TypeSpec)
-					valCodes, err = genStructCodes(decl, "value", "newValue")
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-					var mapCodes string
-					mapCodes, err = runTmpl("structPtrMap", commonTmplData{
-						CPrefix: cprefix,
-						OPrefix: oprefix,
-						Name:    name.Name,
-						Type:    xType.Name,
-						Body:    valCodes,
-					})
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-					codes += mapCodes
-				}
-			}
-		case *ast.ArrayType:
-			switch eltType := ftype.Elt.(type) {
-			case *ast.Ident:
-				if eltType.Obj == nil {
-					var eltCodes string
-					eltCodes, err = runTmpl("array", arrayTmplData{
-						commonTmplData: commonTmplData{
-							CPrefix: cprefix,
-							OPrefix: oprefix,
-							Name:    name.Name,
-						},
-						IsEltPrimitive: true,
-					})
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-
-					codes += eltCodes
-				} else {
-
-				}
-			case *ast.StarExpr:
-				xtype := eltType.X.(*ast.Ident)
-				if xtype.Obj == nil {
-					var eltCodes string
-					eltCodes, err = runTmpl("array", arrayTmplData{
-						commonTmplData: commonTmplData{
-							CPrefix: cprefix,
-							OPrefix: oprefix,
-							Name:    name.Name,
-						},
-						IsEltPrimitivePtr: true,
-					})
-					if err != nil {
-						err = errutil.Wrap(err)
-						return
-					}
-
-					codes += eltCodes
-				} else {
-
-				}
-			}
-		case *ast.ChanType:
-			log.Printf("--> ChanType %+v\n", ftype)
-		case *ast.FuncType:
-			log.Printf("--> FuncType %+v\n", ftype)
-		case *ast.InterfaceType:
-			log.Printf("--> InterfaceType %+v\n", ftype)
+		var fieldCodes string
+		fieldCodes, err = genExprCodes(field.Type, name, oprefix, cprefix, suffix)
+		if err != nil {
+			err = errutil.Wrap(err)
+			return
 		}
+
+		codes += fieldCodes
 	}
 
 	return
 }
 
-func isPrimitiveType(exprx ast.Expr) bool {
-	// if ident, ok := exprx.(*ast.Ident); ok {
-	// 	return ident.Obj == nil
-	// }
-	switch expr := exprx.(type) {
+func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string) (codes string, err error) {
+	switch ftype := ftypex.(type) {
 	case *ast.Ident:
-		return expr.Obj == nil
+		if isPrimitiveType(ftype) {
+			codes += fmt.Sprintf("\n%s%s.%s = %s.%s", copy, suffix, name, old, name)
+		} else {
+			if decl, ok := ftype.Obj.Decl.(*ast.TypeSpec); ok {
+				var typeCodes string
+				typeCodes, err = genStructCodes(decl, old+"."+name.Name, copy+"."+name.Name, suffix)
+				if err != nil {
+					err = errutil.Wrap(err)
+					return
+				}
+				codes += typeCodes
+			}
+		}
 	case *ast.StarExpr:
-		return false
-	default:
-		return true
+		xType := ftype.X.(*ast.Ident)
+		if isPrimitiveType(xType) {
+			nameVal := name.Name
+			codes += fmt.Sprintf(`
+				if %s.%s != nil {
+					val := *%s.%s
+					%s.%s = &val
+				}`, old, nameVal, old, nameVal, copy, nameVal)
+		} else {
+			decl := xType.Obj.Decl.(*ast.TypeSpec)
+			var bodyCodes string
+			bodyCodes, err = genStructCodes(decl, old+"."+name.Name, copy+"."+name.Name, suffix)
+			if err != nil {
+				err = errutil.Wrap(err)
+				return
+			}
+			codes += fmt.Sprintf(`
+				if %s.%s != nil {
+					%s.%s = new(%s)
+					%s
+				}`, old, name, old, name, xType.Name, cleanNewLine(bodyCodes))
+		}
+	case *ast.MapType:
+		switch valType := ftype.Value.(type) {
+		case *ast.Ident:
+			if isPrimitiveType(valType) {
+				codes += fmt.Sprintf(`
+					for key, value := range %s.%s {
+						copied.%s[key] = value
+					}`, old, name, name)
+			} else {
+				var valCodes string
+				valCodes, err = genStructCodes(valType.Obj.Decl.(*ast.TypeSpec), "value", "copied."+name.String(), "[key]")
+				if err != nil {
+					err = errutil.Wrap(err)
+					return
+				}
+				codes += fmt.Sprintf(`
+					for key, value := range %s.%s {
+						copied.%s[key] = %s{}
+						%s
+					}`, old, name, name, valType.Name, cleanNewLine(valCodes))
+			}
+		case *ast.StarExpr:
+			xtype := valType.X.(*ast.Ident)
+			if isPrimitiveType(xtype) {
+				codes += fmt.Sprintf(`
+					for key, value := range %s.%s {
+						if value != nil {
+							newValue := *value
+							copied.%s[key] = &newValue
+						} else {
+							copied.%s[key] = nil
+						}
+					}`, old, name, name, name)
+			} else {
+				var valCodes string
+				valCodes, err = genStructCodes(xtype.Obj.Decl.(*ast.TypeSpec), "value", "copied."+name.String(), "[key]")
+				if err != nil {
+					err = errutil.Wrap(err)
+					return
+				}
+				codes += fmt.Sprintf(`
+					for key, value := range %s.%s {
+						if value != nil {
+							copied.%s[key] = new(%s)
+							%s
+						} else {
+							copied.%s[key] = nil
+						}
+					}`, old, name, name, xtype.Name, cleanNewLine(valCodes), name)
+			}
+		}
+	case *ast.ArrayType:
+		switch valType := ftype.Elt.(type) {
+		case *ast.Ident:
+			if isPrimitiveType(valType) {
+				codes += fmt.Sprintf(`
+					for _, elt := range %s.%s {
+						%s.%s = append(%s.%s, elt)
+					}`, old, name, copy, name, copy, name)
+			} else {
+				var valCodes string
+				valCodes, err = genStructCodes(valType.Obj.Decl.(*ast.TypeSpec), "elt", "newElt", "")
+				if err != nil {
+					err = errutil.Wrap(err)
+					return
+				}
+				codes += fmt.Sprintf(`
+					for _, elt := range %s.%s {
+						newElt := %s{}
+						%s
+						%s.%s = append(%s.%s, newElt)
+					}`, old, name, valType.Name, cleanNewLine(valCodes), copy, name, copy, name)
+			}
+		case *ast.StarExpr:
+			xtype := valType.X.(*ast.Ident)
+			if isPrimitiveType(xtype) {
+				codes += fmt.Sprintf(`
+					for _, elt := range %s.%s {
+						if elt != nil {
+							newElt := *elt
+							%s.%s = append(%s.%s, &newElt)
+						} else {
+							%s.%s = append(%s.%s, nil)
+						}
+					}`, old, name, copy, name, copy, name, copy, name, copy, name)
+			} else {
+				var valCodes string
+				valCodes, err = genStructCodes(xtype.Obj.Decl.(*ast.TypeSpec), "elt", "newElt", "")
+				if err != nil {
+					err = errutil.Wrap(err)
+					return
+				}
+				codes += fmt.Sprintf(`
+					for _, elt := range %s.%s {
+						if elt != nil {
+							newElt := new(%s)
+							%s
+							%s.%s = append(%s.%s, newElt)
+						} else {
+							%s.%s = append(%s.%s, nil)
+						}
+					}`, old, name, xtype.Name, cleanNewLine(valCodes), copy, name, copy, name, copy, name, copy, name)
+			}
+		}
+		// switch eltType := ftype.Elt.(type) {
+		// case *ast.Ident:
+		// 	if eltType.Obj == nil {
+		// 		var eltCodes string
+		// 		eltCodes, err = runTmpl("array", arrayTmplData{
+		// 			commonTmplData: commonTmplData{
+		// 				CPrefix: copy,
+		// 				OPrefix: old,
+		// 				Name:    name.Name,
+		// 			},
+		// 			IsEltPrimitive: true,
+		// 		})
+		// 		if err != nil {
+		// 			err = errutil.Wrap(err)
+		// 			return
+		// 		}
+
+		// 		codes += eltCodes
+		// 	} else {
+
+		// 	}
+		// case *ast.StarExpr:
+		// 	xtype := eltType.X.(*ast.Ident)
+		// 	if xtype.Obj == nil {
+		// 		var eltCodes string
+		// 		eltCodes, err = runTmpl("array", arrayTmplData{
+		// 			commonTmplData: commonTmplData{
+		// 				CPrefix: copy,
+		// 				OPrefix: old,
+		// 				Name:    name.Name,
+		// 			},
+		// 			IsEltPrimitivePtr: true,
+		// 		})
+		// 		if err != nil {
+		// 			err = errutil.Wrap(err)
+		// 			return
+		// 		}
+
+		// 		codes += eltCodes
+		// 	} else {
+
+		// 	}
+		// }
+	case *ast.ChanType:
+		log.Printf("--> ChanType %+v\n", ftype)
+	case *ast.FuncType:
+		log.Printf("--> FuncType %+v\n", ftype)
+	case *ast.InterfaceType:
+		log.Printf("--> InterfaceType %+v\n", ftype)
 	}
 
-	return true
+	return
+}
+
+func cleanNewLine(codes string) string {
+	if codes != "" && codes[0] == '\n' {
+		codes = codes[1:]
+	}
+	return codes
+}
+
+func isPrimitiveType(expr *ast.Ident) bool {
+	return expr.Obj == nil
 }
 
 // func walkGenDeclSpecs(specs []ast.Spec) {

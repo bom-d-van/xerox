@@ -1,10 +1,10 @@
 package main
 
 import (
-	"log"
+	"go/parser"
+	"go/token"
 	"testing"
 
-	"github.com/bom-d-van/goutil/errutil"
 	"github.com/bom-d-van/goutil/gocheckutil"
 	. "launchpad.net/gocheck"
 )
@@ -40,11 +40,25 @@ func (s *ParserSuite) TestXeroxMarker(c *C) {
 	}
 }
 
+var walkSamples = map[string]string{
+	"simpletest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	"structtest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	"maptest":    "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	"arraytest":  "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+}
+
 func (p *ParserSuite) TestWalk(c *C) {
-	codes, err := GenCodes("/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/examples")
-	println(codes)
-	if err != nil {
-		log.Printf("--> %+v\n", err.(errutil.Err).Details())
+	for pkg, path := range walkSamples {
+		fset := token.NewFileSet()
+		pkgfixture := path + "/" + pkg
+		pkgs, err := parser.ParseDir(fset, pkgfixture, filter, parser.ParseComments)
+		c.Check(err, Equals, nil)
+		comments := pkgs[pkg].Files[pkgfixture+"/test.go"].Comments
+		expectation := comments[len(comments)-1].Text()
+
+		codes, err := GenCodes(pkgfixture)
+		c.Check(err, Equals, nil)
+		c.Check(codes, Equals, expectation)
+		println(codes)
 	}
-	// c.Check(err, Equals, nil)
 }
