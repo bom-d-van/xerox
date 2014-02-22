@@ -9,7 +9,18 @@ type Array struct {
 }
 
 type AnotherData struct {
-	TEST string
+	TEST    string
+	nesteds []*DeepNested
+}
+
+type DeepNested struct {
+	info    *string
+	infos   []string
+	nesteds []*UltraDeep
+}
+
+type UltraDeep struct {
+	level string
 }
 
 /*
@@ -31,6 +42,26 @@ func XeroxArray(sample Array) Array {
 	for _, elt := range sample.structs {
 		newElt := AnotherData{}
 		newElt.TEST = elt.TEST
+		for _, elt1 := range elt.nesteds {
+			newElt1 := new(DeepNested)
+			if elt1.info != nil {
+				val := *elt1.info
+				newElt1.info = &val
+			}
+			for _, elt2 := range elt1.infos {
+				newElt1.infos = append(newElt1.infos, elt2)
+			}
+			for _, elt2 := range elt1.nesteds {
+				if elt2 != nil {
+					newElt2 := new(UltraDeep)
+					newElt2.level = elt2.level
+					newElt1.nesteds = append(newElt1.nesteds, newElt2)
+				} else {
+					newElt1.nesteds = append(newElt1.nesteds, nil)
+				}
+			}
+			newElt.nesteds = append(newElt.nesteds, newElt2)
+		}
 		copied.structs = append(copied.structs, newElt)
 	}
 	for _, elt := range sample.structptrs {

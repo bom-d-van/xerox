@@ -73,7 +73,7 @@ func GenCodes(path string) (codes string, err error) {
 					continue
 				}
 				var specCodes string
-				specCodes, err = genStructCodes(spec, "sample", "copied", "")
+				specCodes, err = genStructCodes(spec, "sample", "copied", "", 0)
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
@@ -102,7 +102,7 @@ func GenCodes(path string) (codes string, err error) {
 	return
 }
 
-func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix, suffix string) (codes string, err error) {
+func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix, suffix string, level int) (codes string, err error) {
 	structType, ok := spec.Type.(*ast.StructType)
 	if !ok {
 		return
@@ -110,7 +110,7 @@ func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix, suffix string) (codes 
 
 	for _, field := range structType.Fields.List {
 		var fieldCodes string
-		fieldCodes, err = genFieldCodes(field, oprefix, cprefix, suffix)
+		fieldCodes, err = genFieldCodes(field, oprefix, cprefix, suffix, level)
 		if err != nil {
 			err = errutil.Wrap(err)
 			return
@@ -121,10 +121,10 @@ func genStructCodes(spec *ast.TypeSpec, oprefix, cprefix, suffix string) (codes 
 	return
 }
 
-func genFieldCodes(field *ast.Field, oprefix, cprefix, suffix string) (codes string, err error) {
+func genFieldCodes(field *ast.Field, oprefix, cprefix, suffix string, level int) (codes string, err error) {
 	for _, name := range field.Names {
 		var fieldCodes string
-		fieldCodes, err = genExprCodes(field.Type, name, oprefix, cprefix, suffix)
+		fieldCodes, err = genExprCodes(field.Type, name, oprefix, cprefix, suffix, level)
 		if err != nil {
 			err = errutil.Wrap(err)
 			return
@@ -136,7 +136,7 @@ func genFieldCodes(field *ast.Field, oprefix, cprefix, suffix string) (codes str
 	return
 }
 
-func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string) (codes string, err error) {
+func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string, level int) (codes string, err error) {
 	switch ftype := ftypex.(type) {
 	case *ast.Ident:
 		if isPrimitiveType(ftype) {
@@ -144,7 +144,7 @@ func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string) (c
 		} else {
 			if decl, ok := ftype.Obj.Decl.(*ast.TypeSpec); ok {
 				var typeCodes string
-				typeCodes, err = genStructCodes(decl, old+"."+name.Name, copy+"."+name.Name, suffix)
+				typeCodes, err = genStructCodes(decl, old+"."+name.Name, copy+"."+name.Name, suffix, level)
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
@@ -164,7 +164,7 @@ func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string) (c
 		} else {
 			decl := xType.Obj.Decl.(*ast.TypeSpec)
 			var bodyCodes string
-			bodyCodes, err = genStructCodes(decl, old+"."+name.Name, copy+"."+name.Name, suffix)
+			bodyCodes, err = genStructCodes(decl, old+"."+name.Name, copy+"."+name.Name, suffix, level)
 			if err != nil {
 				err = errutil.Wrap(err)
 				return
@@ -176,107 +176,111 @@ func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string) (c
 				}`, old, name, old, name, xType.Name, cleanNewLine(bodyCodes))
 		}
 	case *ast.MapType:
+		key, value, newValue := levelize("key", level), levelize("val", level), levelize("newVal", level)
 		switch valType := ftype.Value.(type) {
 		case *ast.Ident:
 			if isPrimitiveType(valType) {
 				codes += fmt.Sprintf(`
-					for key, value := range %s.%s {
-						copied.%s[key] = value
-					}`, old, name, name)
+					for %s, %s := range %s.%s {
+						%s.%s[%[1]s] = %s
+					}`, key, value, old, name, copy, name)
 			} else {
 				var valCodes string
-				valCodes, err = genStructCodes(valType.Obj.Decl.(*ast.TypeSpec), "value", "copied."+name.String(), "[key]")
+				valCodes, err = genStructCodes(valType.Obj.Decl.(*ast.TypeSpec), value, newValue, "["+key+"]", level+1)
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
 				}
 				codes += fmt.Sprintf(`
-					for key, value := range %s.%s {
-						copied.%s[key] = %s{}
+					for %s, %s := range %[4]s.%s {
+						%[3]s := %[8]s{}
 						%s
-					}`, old, name, name, valType.Name, cleanNewLine(valCodes))
+						%[6]s.%s[%[1]s] = %s
+					}`, key, value, newValue, old, name, copy, name, valType.Name, cleanNewLine(valCodes))
 			}
 		case *ast.StarExpr:
 			xtype := valType.X.(*ast.Ident)
 			if isPrimitiveType(xtype) {
 				codes += fmt.Sprintf(`
-					for key, value := range %s.%s {
-						if value != nil {
-							newValue := *value
-							copied.%s[key] = &newValue
+					for %s, %s := range %[4]s.%s {
+						if %[2]s != nil {
+							%s := *%[2]s
+							%[6]s.%s[%[1]s] = &%[3]s
 						} else {
-							copied.%s[key] = nil
+							%[6]s.%s[%[1]s] = nil
 						}
-					}`, old, name, name, name)
+					}`, key, value, newValue, old, name, copy, name)
 			} else {
 				var valCodes string
-				valCodes, err = genStructCodes(xtype.Obj.Decl.(*ast.TypeSpec), "value", "copied."+name.String(), "[key]")
+				valCodes, err = genStructCodes(xtype.Obj.Decl.(*ast.TypeSpec), value, newValue, "["+key+"]", level+1)
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
 				}
 				codes += fmt.Sprintf(`
-					for key, value := range %s.%s {
-						if value != nil {
-							copied.%s[key] = new(%s)
+					for %s, %s := range %[4]s.%s {
+						if %[2]s != nil {
+							%s := new(%[8]s)
 							%s
+							%[6]s.%s[%[1]s] = %[3]s
 						} else {
-							copied.%s[key] = nil
+							%[6]s.%s[%[1]s] = nil
 						}
-					}`, old, name, name, xtype.Name, cleanNewLine(valCodes), name)
+					}`, key, value, newValue, old, name, copy, name, xtype.Name, cleanNewLine(valCodes))
 			}
 		}
 	case *ast.ArrayType:
+		elt, newElt := levelize("elt", level), levelize("newElt", level)
 		switch valType := ftype.Elt.(type) {
 		case *ast.Ident:
 			if isPrimitiveType(valType) {
 				codes += fmt.Sprintf(`
-					for _, elt := range %s.%s {
-						%s.%s = append(%s.%s, elt)
-					}`, old, name, copy, name, copy, name)
+					for _, %s := range %s.%s {
+						%s.%s = append(%[4]s.%s, %[1]s)
+					}`, elt, old, name, copy, name)
 			} else {
 				var valCodes string
-				valCodes, err = genStructCodes(valType.Obj.Decl.(*ast.TypeSpec), "elt", "newElt", "")
+				valCodes, err = genStructCodes(valType.Obj.Decl.(*ast.TypeSpec), elt, newElt, "", level+1)
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
 				}
 				codes += fmt.Sprintf(`
-					for _, elt := range %s.%s {
-						newElt := %s{}
+					for _, %s := range %s.%s {
+						%s := %s{}
 						%s
-						%s.%s = append(%s.%s, newElt)
-					}`, old, name, valType.Name, cleanNewLine(valCodes), copy, name, copy, name)
+						%s.%s = append(%[7]s.%s, %[4]s)
+					}`, elt, old, name, newElt, valType.Name, cleanNewLine(valCodes), copy, name)
 			}
 		case *ast.StarExpr:
 			xtype := valType.X.(*ast.Ident)
 			if isPrimitiveType(xtype) {
 				codes += fmt.Sprintf(`
-					for _, elt := range %s.%s {
-						if elt != nil {
-							newElt := *elt
-							%s.%s = append(%s.%s, &newElt)
+					for _, %[2]s := range %[3]s.%s {
+						if %[2]s != nil {
+							%[1]s := *%s
+							%[5]s.%s = append(%[5]s.%s, &%[1]s)
 						} else {
-							%s.%s = append(%s.%s, nil)
+							%[5]s.%s = append(%[5]s.%s, nil)
 						}
-					}`, old, name, copy, name, copy, name, copy, name, copy, name)
+					}`, newElt, elt, old, name, copy, name)
 			} else {
 				var valCodes string
-				valCodes, err = genStructCodes(xtype.Obj.Decl.(*ast.TypeSpec), "elt", "newElt", "")
+				valCodes, err = genStructCodes(xtype.Obj.Decl.(*ast.TypeSpec), elt, newElt, "", level+1)
 				if err != nil {
 					err = errutil.Wrap(err)
 					return
 				}
 				codes += fmt.Sprintf(`
-					for _, elt := range %s.%s {
-						if elt != nil {
-							newElt := new(%s)
+					for _, %s := range %[3]s.%s {
+						if %[1]s != nil {
+							%s := new(%[5]s)
 							%s
-							%s.%s = append(%s.%s, newElt)
+							%[7]s.%s = append(%[7]s.%s, %[2]s)
 						} else {
-							%s.%s = append(%s.%s, nil)
+							%[7]s.%s = append(%[7]s.%s, nil)
 						}
-					}`, old, name, xtype.Name, cleanNewLine(valCodes), copy, name, copy, name, copy, name, copy, name)
+					}`, elt, newElt, old, name, xtype.Name, cleanNewLine(valCodes), copy, name)
 			}
 		}
 		// switch eltType := ftype.Elt.(type) {
@@ -331,6 +335,15 @@ func genExprCodes(ftypex ast.Expr, name *ast.Ident, old, copy, suffix string) (c
 	}
 
 	return
+}
+
+func levelize(str string, level int) string {
+	var levelStr string
+	if level > 0 {
+		levelStr = fmt.Sprintf("%d", level)
+	}
+
+	return str + levelStr
 }
 
 func cleanNewLine(codes string) string {

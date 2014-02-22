@@ -41,10 +41,10 @@ func (s *ParserSuite) TestXeroxMarker(c *C) {
 }
 
 var walkSamples = map[string]string{
-	"simpletest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
-	"structtest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	// "simpletest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	// "structtest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
 	"maptest":    "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
-	"arraytest":  "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	// "arraytest":  "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
 }
 
 func (p *ParserSuite) TestWalk(c *C) {

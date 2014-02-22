@@ -10,7 +10,20 @@ type Map struct {
 }
 
 type AnotherData struct {
-	TEST string
+	TEST    string
+	nesteds map[string]*DeepNested
+}
+
+type DeepNested struct {
+	info    *string
+	infos   map[float64]string
+	nesteds map[string]*UltraDeep
+
+	// nestedArrayVal map[init]*[]UltraDeep
+}
+
+type UltraDeep struct {
+	level string
 }
 
 /*
@@ -32,6 +45,9 @@ func XeroxMap(sample Map) Map {
 	for key, value := range sample.structm {
 		copied.structm[key] = AnotherData{}
 		copied.structm[key].TEST = value.TEST
+		for key1, value1 := range sample.nesteds {
+
+		}
 	}
 	for key, value := range sample.structmptr {
 		if value != nil {
