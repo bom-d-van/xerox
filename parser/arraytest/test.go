@@ -2,10 +2,13 @@ package arraytest
 
 // @xerox
 type Array struct {
-	infos      []float
-	infoptrs   []*int
-	structs    []AnotherData
-	structptrs []*AnotherData
+	infos       []float
+	infoptrs    []*int
+	structs     []AnotherData
+	structptrs  []*AnotherData
+	maps        []map[string]string
+	arrays      [][]int
+	arrayArrays [][][]int
 }
 
 type AnotherData struct {
@@ -31,12 +34,40 @@ func XeroxArray(sample Array) Array {
 	for _, elt := range sample.infos {
 		copied.infos = append(copied.infos, elt)
 	}
+	for _, elt := range sample.arrays {
+		for _, elt1 := range elt {
+			elt = append(elt, elt1)
+		}
+		copied.infos = append(copied.infos, elt)
+	}
+	for _, elt := range sample.arrayArrays {
+		if elt != nil {
+			newElt := [][]int{}
+			for _, elt1 := range elt {
+				newElt1 := [][]int{}
+				for _, elt2 := range elt1 {
+					newElt1 = append(newElt1, elt2)
+				}
+				newElt = append(newElt, newElt1)
+			}
+			copied.infos = append(copied.infos, newElt)
+		} else {
+			copied.infos = append(copied.infos, nil)
+		}
+	}
 	for _, elt := range sample.infoptrs {
 		if elt != nil {
 			newElt := *elt
 			copied.infoptrs = append(copied.infoptrs, &newElt)
 		} else {
 			copied.infoptrs = append(copied.infoptrs, nil)
+		}
+	}
+	for _, elt := range sample.maps {
+		if elt != nil {
+			newElt := map[string]string{}
+		} else {
+			copied.maps = append(copied.maps, nil)
 		}
 	}
 	for _, elt := range sample.structs {
