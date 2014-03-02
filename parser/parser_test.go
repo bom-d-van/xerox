@@ -5,7 +5,7 @@ import (
 	"go/token"
 	"testing"
 
-	"github.com/bom-d-van/goutil/gocheckutil"
+	"github.com/bom-d-van/goutils/gocheckutils"
 	. "launchpad.net/gocheck"
 )
 
@@ -41,17 +41,17 @@ func (s *ParserSuite) TestXeroxMarker(c *C) {
 }
 
 var walkSamples = map[string]string{
-	// "simpletest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
-	// "structtest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	"simpletest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	"structtest": "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
 	"maptest":    "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
-	// "arraytest":  "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
+	"arraytest":  "/Users/bom_d_van/Code/go/workspace/src/github.com/bom-d-van/xerox/parser",
 }
 
 func (p *ParserSuite) TestWalk(c *C) {
 	for pkg, path := range walkSamples {
 		fset := token.NewFileSet()
 		pkgfixture := path + "/" + pkg
-		pkgs, err := parser.ParseDir(fset, pkgfixture, filter, parser.ParseComments)
+		pkgs, err := parser.ParseDir(fset, pkgfixture, nil, parser.ParseComments)
 		c.Check(err, Equals, nil)
 		comments := pkgs[pkg].Files[pkgfixture+"/test.go"].Comments
 		expectation := comments[len(comments)-1].Text()
